@@ -1,5 +1,6 @@
-# docker-compose.yml — agent-core (step 1: api only)
-# Steps 3+ will add: redis, postgres, chromadb, embedding-worker
+# docker-compose.yml — agent-core
+# Step 4: added postgres
+# Steps 9+ will add: chromadb, embedding-worker
 
 services:
   agent-api:
@@ -12,6 +13,11 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     networks:
       - shared-net
     healthcheck:
@@ -19,10 +25,46 @@ services:
       interval: 15s
       timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: agent-redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis_data:/data
+    networks:
+      - shared-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: agent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agent
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: agentcore
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - shared-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agent -d agentcore"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  redis_data:
+  postgres_data:
 
 networks:
   shared-net:
     name: agent-shared-net
     driver: bridge
-
