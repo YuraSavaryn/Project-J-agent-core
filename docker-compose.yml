@@ -1,0 +1,28 @@
+# docker-compose.yml — agent-core (step 1: api only)
+# Steps 3+ will add: redis, postgres, chromadb, embedding-worker
+
+services:
+  agent-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: agent-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    networks:
+      - shared-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  shared-net:
+    name: agent-shared-net
+    driver: bridge
+
