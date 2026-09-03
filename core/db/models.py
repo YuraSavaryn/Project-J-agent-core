@@ -8,7 +8,7 @@ Tables
 - Chunk         — link between ChromaDB vector and its source document
 - QueryLog      — per-request analytics log
 - QueryLogChunk — many-to-many join between QueryLog and Chunk
-- Feedback      — user rating (👍/👎) on a query result
+- Feedback      — user rating on a query result
 """
 
 from __future__ import annotations

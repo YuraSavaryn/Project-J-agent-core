@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     openrouter_default_model: str = "anthropic/claude-3.5-sonnet"
 
     llm_primary_provider: str = "groq"  # groq | openrouter
+    llm_request_timeout_seconds: float = 30.0
 
     # ── Redis ─────────────────────────────────────────────────────────────────
     redis_url: str = "redis://localhost:6379/0"
