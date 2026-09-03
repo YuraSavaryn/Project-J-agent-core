@@ -1,17 +1,18 @@
 """Agent orchestrator — the main pipeline that handles a user message.
 
-Pipeline (step 6 — no RAG, no tools yet):
+Pipeline (step 7 — curated wiki added, no RAG, no tools yet):
   1. Load conversation history from SessionStore.
-  2. Build the messages list (system + history + user message) via prompt builder.
-  3. Call LLMRouter to get the model's reply.
-  4. Persist both the user message and assistant reply to SessionStore.
-  5. Return an OrchestratorResult with the reply.
+  2. Curated wiki lookup — check if a high-quality article answers the query.
+     If found → use article content as context (bypasses pure LLM generation).
+  3. Build the messages list (system + history + [wiki context] + user message).
+  4. Call LLMRouter to get the model's reply.
+  5. Persist both the user message and assistant reply to SessionStore.
+  6. Return an OrchestratorResult with the reply.
 
 Future steps will extend this pipeline:
-  - Step 7:  curated wiki lookup (before LLM call)
-  - Step 11: RAG retrieval (inject context_chunks into build_messages)
+  - Step 11: RAG retrieval (additional context_chunks injected)
   - Step 12: tool-calling loop
-  - Step 13: query logging
+  - Step 13: query logging to PostgreSQL
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from core.llm.base import LLMResponse
 from core.llm.router import LLMRouter, LLMUnavailableError
 from core.memory.session_store import MessageDict, SessionStore
 from core.prompts.builder import build_messages
+from knowledge.curated_wiki.base import Article, KnowledgeProvider
+from knowledge.curated_wiki.stub_provider import StubProvider
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,9 @@ class Orchestrator:
         Provides conversation history (Redis + Postgres).
     llm_router:
         Routes LLM calls across available providers with fallback.
+    knowledge_provider:
+        Curated wiki provider.  Defaults to ``StubProvider`` (always returns None).
+        Inject a real provider in production or a mock in tests.
     history_limit:
         Maximum number of recent messages to include in the prompt.
         Keeps token usage bounded for long conversations.
@@ -57,10 +63,12 @@ class Orchestrator:
         self,
         session_store: SessionStore,
         llm_router: LLMRouter,
+        knowledge_provider: KnowledgeProvider | None = None,
         history_limit: int = 20,
     ) -> None:
         self._store = session_store
         self._router = llm_router
+        self._wiki = knowledge_provider or StubProvider()
         self._history_limit = history_limit
 
     async def handle_message(
@@ -79,7 +87,7 @@ class Orchestrator:
             The text sent by the user.
         context_chunks:
             Optional RAG-retrieved text snippets (injected into the prompt).
-            Empty / None → no context injected (step 6 behaviour).
+            Empty / None → no extra context at this step.
         """
         logger.info("Orchestrator: session=%s, message_len=%d", session_id, len(user_message))
 
@@ -88,14 +96,28 @@ class Orchestrator:
             session_id, limit=self._history_limit
         )
 
-        # ── 2. Build prompt ───────────────────────────────────────────────────
+        # ── 2. Curated wiki lookup ────────────────────────────────────────────
+        wiki_article: Article | None = await self._wiki.lookup(user_message)
+
+        # Merge wiki content with any caller-supplied RAG chunks
+        extra_chunks: list[str] = list(context_chunks or [])
+        if wiki_article is not None:
+            logger.info(
+                "Orchestrator: curated wiki hit — article=%r (session=%s)",
+                wiki_article.id,
+                session_id,
+            )
+            # Prepend wiki content so it takes precedence over RAG chunks
+            extra_chunks.insert(0, wiki_article.content)
+
+        # ── 3. Build prompt ───────────────────────────────────────────────────
         messages = build_messages(
             history=history,
             user_message=user_message,
-            context_chunks=context_chunks or [],
+            context_chunks=extra_chunks,
         )
 
-        # ── 3. Call LLM ───────────────────────────────────────────────────────
+        # ── 4. Call LLM ───────────────────────────────────────────────────────
         try:
             llm_response: LLMResponse = await self._router.complete(messages)
         except LLMUnavailableError:
@@ -112,11 +134,11 @@ class Orchestrator:
             session_id,
         )
 
-        # ── 4. Persist to session store ───────────────────────────────────────
+        # ── 5. Persist to session store ───────────────────────────────────────
         await self._store.append_message(session_id, role="user", content=user_message)
         await self._store.append_message(session_id, role="assistant", content=reply)
 
-        # ── 5. Return result ──────────────────────────────────────────────────
+        # ── 6. Return result ──────────────────────────────────────────────────
         return OrchestratorResult(
             reply=reply,
             session_id=session_id,
@@ -125,4 +147,3 @@ class Orchestrator:
             llm_provider=llm_response.provider,
             llm_model=llm_response.model,
         )
-
