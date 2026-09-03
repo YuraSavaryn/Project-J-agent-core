@@ -60,9 +60,27 @@ services:
       timeout: 5s
       retries: 5
 
+  embedding-worker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: agent-embedding-worker
+    restart: unless-stopped
+    command: --model-id BAAI/bge-m3
+    ports:
+      - "8002:80"
+    volumes:
+      - embedding_cache:/data
+    networks:
+      - shared-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   redis_data:
   postgres_data:
+  embedding_cache:
 
 networks:
   shared-net:
