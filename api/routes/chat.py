@@ -1,9 +1,16 @@
-"""Chat endpoint — stub implementation that echoes and stores history."""
+"""Chat endpoint — full LLM pipeline via Orchestrator."""
 
-from fastapi import APIRouter
+from __future__ import annotations
 
-from api.dependencies import SessionStoreDep
-from api.schemas.chat import ChatRequest, ChatResponse
+import logging
+
+from fastapi import APIRouter, HTTPException, status
+
+from api.dependencies import OrchestratorDep
+from api.schemas.chat import ChatRequest, ChatResponse, SourceChunk, SuggestedAction
+from core.llm.router import LLMUnavailableError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
 
@@ -16,37 +23,41 @@ router = APIRouter(tags=["chat"])
         "Main conversational endpoint. "
         "Accepts a user message and returns the agent's reply with optional sources "
         "and suggested follow-up actions.\n\n"
-        "> **Note**: This is an echo stub with session history tracking. "
-        "Full LLM integration will be added in step 6."
+        "The agent maintains session context across multiple calls using the same `session_id`."
     ),
 )
 async def chat(
     request: ChatRequest,
-    session_store: SessionStoreDep,
+    orchestrator: OrchestratorDep,
 ) -> ChatResponse:
-    """Echo stub — stores user+assistant messages and returns echo reply.
+    """Handle a user message through the full LLM orchestrator pipeline.
 
-    Will be replaced by the full orchestrator pipeline in step 6.
+    Pipeline: session history → prompt builder → LLM router → session persist → response.
     """
-    # 1. Persist user message to session history
-    await session_store.append_message(
-        session_id=request.session_id,
-        role="user",
-        content=request.message,
-    )
-
-    reply = f"[ECHO] {request.message}"
-
-    # 2. Persist assistant reply to session history
-    await session_store.append_message(
-        session_id=request.session_id,
-        role="assistant",
-        content=reply,
-    )
+    try:
+        result = await orchestrator.handle_message(
+            session_id=request.session_id,
+            user_message=request.message,
+        )
+    except LLMUnavailableError:
+        logger.error(
+            "All LLM providers unavailable for session=%s", request.session_id
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Наразі сервіс тимчасово недоступний. "
+                "Спробуйте ще раз через кілька хвилин."
+            ),
+        )
 
     return ChatResponse(
-        session_id=request.session_id,
-        reply=reply,
-        sources=[],
-        suggested_actions=[],
+        session_id=result.session_id,
+        reply=result.reply,
+        sources=[
+            SourceChunk(**s) for s in result.sources
+        ],
+        suggested_actions=[
+            SuggestedAction(**a) for a in result.suggested_actions
+        ],
     )
