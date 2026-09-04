@@ -26,15 +26,24 @@ from knowledge.rag.vectorstore.chroma_store import ChromaStore, QueryResult
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+_ephemeral_client = chromadb.EphemeralClient()
+
+
 @pytest.fixture
 def store() -> ChromaStore:
-    """In-memory ChromaStore — no server required."""
-    client = chromadb.EphemeralClient()
-    return ChromaStore(
-        collection_name="test_collection",
+    """In-memory ChromaStore — unique collection per test, auto-cleaned up."""
+    collection_name = f"test_{uuid.uuid4().hex}"
+    s = ChromaStore(
+        collection_name=collection_name,
         distance_fn="cosine",
-        client=client,
+        client=_ephemeral_client,
     )
+    yield s
+    # Cleanup: delete the collection so counts don't bleed across tests
+    try:
+        _ephemeral_client.delete_collection(collection_name)
+    except Exception:
+        pass
 
 
 def _vec(dim: int = 4, val: float = 1.0) -> list[float]:
@@ -60,7 +69,8 @@ def _meta(doc_id: str = "doc-1", chunk_idx: int = 0) -> dict:
 def test_ensure_collection_creates_collection(store: ChromaStore) -> None:
     col = store.ensure_collection()
     assert col is not None
-    assert col.name == "test_collection"
+    # Name is dynamically generated per-fixture — verify it matches the store
+    assert col.name == store._collection_name
 
 
 def test_ensure_collection_is_idempotent(store: ChromaStore) -> None:
