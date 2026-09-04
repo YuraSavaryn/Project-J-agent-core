@@ -13,8 +13,6 @@ This is intentionally simple (two fixed providers).  A more sophisticated
 router (round-robin, cost-based, model-selection) can replace this later.
 """
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

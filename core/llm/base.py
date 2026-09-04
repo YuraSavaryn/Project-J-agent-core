@@ -4,8 +4,6 @@ All providers (Groq, OpenRouter, …) implement this interface so the
 orchestrator and tests are decoupled from any specific vendor SDK.
 """
 
-from __future__ import annotations
-
 from abc import ABC, abstractmethod
 from typing import Any
 

@@ -14,8 +14,6 @@ The returned ``LoadedDocument`` carries the raw text plus minimal metadata
 (title, source_url, source_type) needed by the ingestion pipeline.
 """
 
-from __future__ import annotations
-
 import io
 import logging
 from abc import ABC, abstractmethod

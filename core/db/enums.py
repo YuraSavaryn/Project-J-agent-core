@@ -6,8 +6,6 @@ native PostgreSQL ``ENUM`` types via SQLAlchemy ``PgEnum``.
 Naming convention: Python class name → snake_case PostgreSQL type name.
 """
 
-from __future__ import annotations
-
 import enum
 
 from sqlalchemy import Enum as PgEnum

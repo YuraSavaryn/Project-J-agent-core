@@ -3,8 +3,6 @@
 Import the dependency functions here and use them in route handlers via ``Depends()``.
 """
 
-from __future__ import annotations
-
 from typing import Annotated, AsyncGenerator
 
 from fastapi import Depends

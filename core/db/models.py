@@ -11,8 +11,6 @@ Tables
 - Feedback      — user rating on a query result
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 
 from sqlalchemy import (

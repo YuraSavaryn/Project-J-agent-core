@@ -1,7 +1,5 @@
 """Unit tests for SessionStore using fakeredis (no real Redis required)."""
 
-from __future__ import annotations
-
 import pytest
 import fakeredis.aioredis as fakeredis
 

@@ -17,8 +17,6 @@ chunk_overlap — characters to repeat at the start of the next chunk (default: 
 The defaults come from ``settings.rag_chunk_size`` / ``settings.rag_chunk_overlap``.
 """
 
-from __future__ import annotations
-
 import re
 import logging
 from dataclasses import dataclass

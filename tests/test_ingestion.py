@@ -12,8 +12,6 @@ Coverage
 - ID consistency: UUID from pipeline.run() appears in ChromaStore (Chroma side)
 """
 
-from __future__ import annotations
-
 import uuid
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch

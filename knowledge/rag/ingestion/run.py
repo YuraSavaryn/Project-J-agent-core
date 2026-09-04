@@ -23,8 +23,6 @@ environment variables / ``.env`` via ``config.settings``.
 Requires a running embedding-worker and ChromaDB server.
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import logging

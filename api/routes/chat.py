@@ -1,7 +1,5 @@
 """Chat endpoint — full LLM pipeline via Orchestrator."""
 
-from __future__ import annotations
-
 import logging
 
 from fastapi import APIRouter, HTTPException, status

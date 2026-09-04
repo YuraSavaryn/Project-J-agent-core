@@ -15,8 +15,6 @@ Future steps will extend this pipeline:
   - Step 13: query logging to PostgreSQL
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 

@@ -7,8 +7,6 @@ orchestrator can call it unconditionally without any conditional checks.
 Replace this with a real provider once the wiki content is ready.
 """
 
-from __future__ import annotations
-
 import logging
 
 from knowledge.curated_wiki.base import Article, KnowledgeProvider

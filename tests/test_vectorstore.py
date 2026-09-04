@@ -14,8 +14,6 @@ Covers:
 - Count
 """
 
-from __future__ import annotations
-
 import uuid
 
 import chromadb

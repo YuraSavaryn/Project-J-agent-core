@@ -4,8 +4,6 @@ Reads database URL from ``config/settings.py`` (falls back to alembic.ini).
 Supports autogenerate from ORM models in ``core/db/models.py``.
 """
 
-from __future__ import annotations
-
 import asyncio
 from logging.config import fileConfig
 

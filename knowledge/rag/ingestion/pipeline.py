@@ -22,8 +22,6 @@ Usage
 >>> print(result.document_title, result.chunk_count)
 """
 
-from __future__ import annotations
-
 import logging
 import uuid
 from dataclasses import dataclass, field

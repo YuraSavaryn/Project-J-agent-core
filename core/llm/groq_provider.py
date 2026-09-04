@@ -1,7 +1,5 @@
 """Groq LLM provider — uses the openai SDK with Groq's OpenAI-compatible API."""
 
-from __future__ import annotations
-
 import logging
 from typing import Any
 

@@ -12,8 +12,6 @@ Inject ``AsyncSession`` in route handlers via ``get_db`` dependency::
         ...
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (

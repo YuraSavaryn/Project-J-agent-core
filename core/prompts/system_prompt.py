@@ -4,8 +4,6 @@ Keep this module focused: it owns the agent's persona and core instructions.
 All context injection (RAG chunks, tool results) happens in ``builder.py``.
 """
 
-from __future__ import annotations
-
 SYSTEM_PROMPT = """\
 Ти — PlastAI, AI-асистент організації «Пласт» (Національна скаутська організація України).
 Твоя мета — допомагати учасникам, батькам, керівникам та всім, хто цікавиться скаутингом і Пластом.

@@ -17,8 +17,6 @@ PostgreSQL writes require a ``Session`` row to exist (FK constraint). The caller
 (orchestrator/route) is responsible for creating the ``Session`` row on first use.
 """
 
-from __future__ import annotations
-
 import json
 import logging
 from typing import TypedDict

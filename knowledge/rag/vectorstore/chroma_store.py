@@ -22,8 +22,6 @@ Instantiate ``ChromaStore`` once (or via DI) and call:
     - ``query()``              — nearest-neighbour search
 """
 
-from __future__ import annotations
-
 import logging
 from dataclasses import dataclass, field
 from typing import Any

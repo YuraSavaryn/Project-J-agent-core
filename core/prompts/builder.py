@@ -10,8 +10,6 @@ the LLM sees them as authoritative context without polluting the conversation
 history.
 """
 
-from __future__ import annotations
-
 from core.llm.base import ChatMessage
 from core.memory.session_store import MessageDict
 from core.prompts.system_prompt import get_system_prompt

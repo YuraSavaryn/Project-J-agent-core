@@ -10,8 +10,6 @@ Strategy
 - ``is_available()`` is tested by controlling ``api_key`` values.
 """
 
-from __future__ import annotations
-
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch

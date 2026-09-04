@@ -5,8 +5,6 @@ Instead of running a real DB, we mock the Postgres methods to verify
 the correct calls are made — keeping the tests fast and dependency-free.
 """
 
-from __future__ import annotations
-
 from unittest.mock import AsyncMock, patch
 
 import pytest
