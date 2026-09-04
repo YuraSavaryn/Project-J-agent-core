@@ -16,6 +16,7 @@ dependencies = [
     "asyncpg>=0.29.0",
     "alembic>=1.13.0",
     "openai>=1.40.0",
+    "chromadb>=0.6.0",
 ]
 
 [project.optional-dependencies]

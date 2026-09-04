@@ -28,23 +28,21 @@ def test_article_fields() -> None:
     """Article dataclass should store all provided fields."""
     article = Article(
         id="plast-history",
-        title="Історія Пласту",
         content="Пласт заснований у 1911 році...",
+        title="Історія Пласту",
         url="https://plast.ua/history",
-        tags=["history", "plast"],
     )
     assert article.id == "plast-history"
     assert article.title == "Історія Пласту"
     assert "1911" in article.content
     assert article.url == "https://plast.ua/history"
-    assert "history" in article.tags
 
 
 def test_article_defaults() -> None:
-    """url and tags should have sensible defaults."""
-    article = Article(id="a", title="T", content="C")
+    """title and url should have sensible defaults (None)."""
+    article = Article(id="a", content="C")
+    assert article.title is None
     assert article.url is None
-    assert article.tags == []
 
 
 def test_knowledge_provider_is_abstract() -> None:

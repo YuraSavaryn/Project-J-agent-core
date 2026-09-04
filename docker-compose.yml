@@ -1,6 +1,7 @@
 # docker-compose.yml — agent-core
-# Step 4: added postgres
-# Steps 9+ will add: chromadb, embedding-worker
+# Steps 3-4: added redis, postgres
+# Step 8:    added embedding-worker
+# Step 9:    added chromadb
 
 services:
   agent-api:
@@ -17,6 +18,8 @@ services:
       redis:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      chromadb:
         condition: service_healthy
     networks:
       - shared-net
@@ -77,10 +80,32 @@ services:
       timeout: 5s
       retries: 5
 
+  chromadb:
+    image: chromadb/chroma:1.0.0
+    container_name: agent-chromadb
+    restart: unless-stopped
+    environment:
+      IS_PERSISTENT: "TRUE"
+      PERSIST_DIRECTORY: /chroma/chroma
+      ANONYMIZED_TELEMETRY: "FALSE"
+    ports:
+      - "8001:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - shared-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
 volumes:
   redis_data:
   postgres_data:
   embedding_cache:
+  chroma_data:
 
 networks:
   shared-net:
