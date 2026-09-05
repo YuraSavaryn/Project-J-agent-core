@@ -46,18 +46,19 @@ class QueryResult:
         The Chroma / Postgres ``chroma_chunk_id`` (UUID string).
     score:
         Cosine distance converted to similarity score (1 − distance).
-        Higher is more similar.
     rank:
-        1-based position in the result list (1 = most similar).
+        1-based position in the results (1 = most similar).
     metadata:
-        Denormalised fields: ``document_id``, ``chunk_index``, ``title``,
-        ``source_url``.  May also contain ``content_preview`` if stored.
+        Denormalised data (e.g. ``title``, ``source_url``).
+    document:
+        Raw chunk text (if requested and stored).
     """
 
     id: str
     score: float
     rank: int
     metadata: dict[str, Any] = field(default_factory=dict)
+    document: str | None = None
 
 
 # ── ChromaStore ───────────────────────────────────────────────────────────────
@@ -218,23 +219,36 @@ class ChromaStore:
         raw = col.query(
             query_embeddings=[vector],
             n_results=k,
-            include=["metadatas", "distances"],
+            include=["metadatas", "distances", "documents"],
         )
 
         ids: list[str] = raw["ids"][0]
         distances: list[float] = raw["distances"][0]
         metadatas: list[dict] = raw["metadatas"][0]  # type: ignore[assignment]
+        
+        raw_docs = raw.get("documents")
+        if raw_docs and raw_docs[0]:
+            documents = raw_docs[0]
+        else:
+            documents = [None] * len(ids)
 
         results: list[QueryResult] = []
-        for rank, (chunk_id, dist, meta) in enumerate(
-            zip(ids, distances, metadatas), start=1
+        for rank, (chunk_id, dist, meta, doc) in enumerate(
+            zip(ids, distances, metadatas, documents), start=1
         ):
             # Chroma cosine distance ∈ [0, 2]; convert to similarity ∈ [-1, 1]
             # For unit-normalised vectors: similarity = 1 − distance
             score = float(1.0 - dist)
             results.append(
-                QueryResult(id=chunk_id, score=score, rank=rank, metadata=meta)
+                QueryResult(
+                    id=chunk_id, 
+                    score=score, 
+                    rank=rank, 
+                    metadata=meta,
+                    document=doc,
+                )
             )
+
 
         logger.debug("ChromaStore: query returned %d results (top_k=%d)", len(results), k)
         return results

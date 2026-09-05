@@ -12,6 +12,7 @@ from config.settings import settings
 from core.llm.router import LLMRouter
 from core.memory.session_store import SessionStore
 from core.orchestrator import Orchestrator
+from knowledge.rag.retriever import Retriever
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 _redis_client: Redis | None = None  # type: ignore[type-arg]
@@ -52,14 +53,44 @@ def get_llm_router() -> LLMRouter:
 LLMRouterDep = Annotated[LLMRouter, Depends(get_llm_router)]
 
 
+# ── Retriever ─────────────────────────────────────────────────────────────────
+
+def get_retriever() -> "Retriever":
+    from config.settings import settings
+    from knowledge.rag.embeddings import get_embedding_provider
+    from knowledge.rag.vectorstore.chroma_store import ChromaStore
+    from knowledge.rag.retriever import Retriever
+
+    embedding_provider = get_embedding_provider(
+        provider=settings.embedding_provider,
+        worker_url=settings.embedding_worker_url,
+        gemini_key=settings.gemini_api_key,
+        gemini_model=settings.gemini_embedding_model,
+    )
+    vector_store = ChromaStore(
+        host=settings.chroma_host,
+        port=settings.chroma_port,
+        collection_name=settings.chroma_collection,
+        distance_fn=settings.chroma_distance_fn,
+    )
+    return Retriever(embedding_provider=embedding_provider, vector_store=vector_store)
+
+RetrieverDep = Annotated["Retriever", Depends(get_retriever)]
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 def get_orchestrator(
     session_store: SessionStoreDep,
     llm_router: LLMRouterDep,
+    retriever: RetrieverDep,
 ) -> Orchestrator:
-    """Return an Orchestrator wired with the request-scoped session store and LLM router."""
-    return Orchestrator(session_store=session_store, llm_router=llm_router)
+    """Return an Orchestrator wired with the request-scoped dependencies."""
+    return Orchestrator(
+        session_store=session_store, 
+        llm_router=llm_router, 
+        retriever=retriever
+    )
 
 
 OrchestratorDep = Annotated[Orchestrator, Depends(get_orchestrator)]

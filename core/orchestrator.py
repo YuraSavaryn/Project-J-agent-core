@@ -24,6 +24,7 @@ from core.memory.session_store import MessageDict, SessionStore
 from core.prompts.builder import build_messages
 from knowledge.curated_wiki.base import Article, KnowledgeProvider
 from knowledge.curated_wiki.stub_provider import StubProvider
+from knowledge.rag.retriever import Retriever
 
 logger = logging.getLogger(__name__)
 
@@ -62,11 +63,13 @@ class Orchestrator:
         session_store: SessionStore,
         llm_router: LLMRouter,
         knowledge_provider: KnowledgeProvider | None = None,
+        retriever: "Retriever | None" = None,
         history_limit: int = 20,
     ) -> None:
         self._store = session_store
         self._router = llm_router
         self._wiki = knowledge_provider or StubProvider()
+        self._retriever = retriever
         self._history_limit = history_limit
 
     async def handle_message(
@@ -99,6 +102,8 @@ class Orchestrator:
 
         # Merge wiki content with any caller-supplied RAG chunks
         extra_chunks: list[str] = list(context_chunks or [])
+        sources_list: list[dict] = []
+        
         if wiki_article is not None:
             logger.info(
                 "Orchestrator: curated wiki hit — article=%r (session=%s)",
@@ -107,6 +112,33 @@ class Orchestrator:
             )
             # Prepend wiki content so it takes precedence over RAG chunks
             extra_chunks.insert(0, wiki_article.content)
+            sources_list.append({
+                "document_id": wiki_article.id,
+                "title": wiki_article.title or "Вікі-стаття",
+                "url": wiki_article.url,
+                "excerpt": wiki_article.content[:200] + "..." if len(wiki_article.content) > 200 else wiki_article.content,
+                "score": 1.0,
+                "rank": 1,
+            })
+        elif self._retriever is not None:
+            # ── 2b. Vector DB RAG lookup (if wiki missed) ─────────────────────
+            logger.info("Orchestrator: wiki miss, querying vector store (session=%s)", session_id)
+            query_results = await self._retriever.retrieve(query=user_message)
+            
+            for qr in query_results:
+                chunk_text = qr.document or qr.metadata.get("content_preview") or ""
+                extra_chunks.append(chunk_text)
+                
+                # Append to sources for API response
+                sources_list.append({
+                    "document_id": str(qr.metadata.get("document_id", qr.id)),
+                    "title": qr.metadata.get("title") or "RAG Документ",
+                    "url": qr.metadata.get("source_url"),
+                    "excerpt": chunk_text[:200] + "..." if len(chunk_text) > 200 else chunk_text,
+                    "score": qr.score,
+                    "rank": qr.rank,
+                    "chunk_id": qr.id,
+                })
 
         # ── 3. Build prompt ───────────────────────────────────────────────────
         messages = build_messages(
@@ -140,8 +172,8 @@ class Orchestrator:
         return OrchestratorResult(
             reply=reply,
             session_id=session_id,
-            sources=[],            # filled in step 11 (RAG)
-            suggested_actions=[],  # filled in future steps
+            sources=sources_list,
+            suggested_actions=[],
             llm_provider=llm_response.provider,
             llm_model=llm_response.model,
         )
