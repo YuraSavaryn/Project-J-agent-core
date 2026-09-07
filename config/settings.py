@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     # One shared collection for all knowledge (per step 9 convention)
     chroma_collection: str = "ngo_knowledge_base"
     # bge-m3 / e5 embedding dimension; cosine distance for similarity
-    chroma_vector_dim: int = 1024
+    chroma_vector_dim: int = 384
     chroma_distance_fn: str = "cosine"
 
     # ── Embeddings ───────────────────────────────────────────────────────────

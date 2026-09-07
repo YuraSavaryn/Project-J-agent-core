@@ -64,10 +64,10 @@ services:
       retries: 5
 
   embedding-worker:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
     container_name: agent-embedding-worker
     restart: unless-stopped
-    command: --model-id BAAI/bge-m3
+    command: --model-id intfloat/multilingual-e5-small
     ports:
       - "8002:80"
     volumes:
@@ -95,7 +95,7 @@ services:
     networks:
       - shared-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v2/heartbeat"]
+      test: ["CMD", "bash", "-c", "</dev/tcp/localhost/8000"]
       interval: 10s
       timeout: 5s
       retries: 5
