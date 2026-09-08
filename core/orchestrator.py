@@ -1,24 +1,23 @@
 """Agent orchestrator — the main pipeline that handles a user message.
 
-Pipeline (step 7 — curated wiki added, no RAG, no tools yet):
+Pipeline (step 12 — tool-calling loop added):
   1. Load conversation history from SessionStore.
-  2. Curated wiki lookup — check if a high-quality article answers the query.
-     If found → use article content as context (bypasses pure LLM generation).
-  3. Build the messages list (system + history + [wiki context] + user message).
-  4. Call LLMRouter to get the model's reply.
+  2. Curated wiki lookup (or RAG retrieval if wiki misses).
+  3. Build the messages list (system + history + [context] + user message).
+  4. Call LLMRouter; if tool_calls are present → execute tools → re-call LLM.
+     Repeat until the LLM returns a plain reply (no more tool_calls).
   5. Persist both the user message and assistant reply to SessionStore.
-  6. Return an OrchestratorResult with the reply.
+  6. Return an OrchestratorResult with the reply and sources.
 
-Future steps will extend this pipeline:
-  - Step 11: RAG retrieval (additional context_chunks injected)
-  - Step 12: tool-calling loop
+Future steps:
   - Step 13: query logging to PostgreSQL
 """
 
+import json
 import logging
 from dataclasses import dataclass, field
 
-from core.llm.base import LLMResponse
+from core.llm.base import ChatMessage, LLMResponse
 from core.llm.router import LLMRouter, LLMUnavailableError
 from core.memory.session_store import MessageDict, SessionStore
 from core.prompts.builder import build_messages
@@ -27,6 +26,9 @@ from knowledge.curated_wiki.stub_provider import StubProvider
 from knowledge.rag.retriever import Retriever
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of tool-call iterations to prevent infinite loops.
+_MAX_TOOL_ITERATIONS = 5
 
 
 @dataclass
@@ -53,6 +55,12 @@ class Orchestrator:
     knowledge_provider:
         Curated wiki provider.  Defaults to ``StubProvider`` (always returns None).
         Inject a real provider in production or a mock in tests.
+    retriever:
+        Optional RAG retriever used when the wiki misses.
+    tool_registry:
+        Optional registry of callable tools for function-calling.
+        When provided, tool schemas are sent to the LLM and any returned
+        ``tool_call`` responses are executed in a loop before the final reply.
     history_limit:
         Maximum number of recent messages to include in the prompt.
         Keeps token usage bounded for long conversations.
@@ -64,12 +72,14 @@ class Orchestrator:
         llm_router: LLMRouter,
         knowledge_provider: KnowledgeProvider | None = None,
         retriever: "Retriever | None" = None,
+        tool_registry: "ToolRegistry | None" = None,
         history_limit: int = 20,
     ) -> None:
         self._store = session_store
         self._router = llm_router
         self._wiki = knowledge_provider or StubProvider()
         self._retriever = retriever
+        self._tools = tool_registry
         self._history_limit = history_limit
 
     async def handle_message(
@@ -103,14 +113,13 @@ class Orchestrator:
         # Merge wiki content with any caller-supplied RAG chunks
         extra_chunks: list[str] = list(context_chunks or [])
         sources_list: list[dict] = []
-        
+
         if wiki_article is not None:
             logger.info(
                 "Orchestrator: curated wiki hit — article=%r (session=%s)",
                 wiki_article.id,
                 session_id,
             )
-            # Prepend wiki content so it takes precedence over RAG chunks
             extra_chunks.insert(0, wiki_article.content)
             sources_list.append({
                 "document_id": wiki_article.id,
@@ -124,12 +133,10 @@ class Orchestrator:
             # ── 2b. Vector DB RAG lookup (if wiki missed) ─────────────────────
             logger.info("Orchestrator: wiki miss, querying vector store (session=%s)", session_id)
             query_results = await self._retriever.retrieve(query=user_message)
-            
+
             for qr in query_results:
                 chunk_text = qr.document or qr.metadata.get("content_preview") or ""
                 extra_chunks.append(chunk_text)
-                
-                # Append to sources for API response
                 sources_list.append({
                     "document_id": str(qr.metadata.get("document_id", qr.id)),
                     "title": qr.metadata.get("title") or "RAG Документ",
@@ -140,22 +147,84 @@ class Orchestrator:
                     "chunk_id": qr.id,
                 })
 
-        # ── 3. Build prompt ───────────────────────────────────────────────────
-        messages = build_messages(
+        # ── 3. Build initial prompt ───────────────────────────────────────────
+        messages: list[ChatMessage] = build_messages(
             history=history,
             user_message=user_message,
             context_chunks=extra_chunks,
         )
 
-        # ── 4. Call LLM ───────────────────────────────────────────────────────
-        try:
-            llm_response: LLMResponse = await self._router.complete(messages)
-        except LLMUnavailableError:
-            logger.error(
-                "Orchestrator: all LLM providers unavailable for session=%s", session_id
-            )
-            raise
+        # ── 4. LLM call + tool-calling loop ──────────────────────────────────
+        tool_schemas = self._tools.to_openai_schemas() if self._tools else None
 
+        llm_response: LLMResponse | None = None
+        for iteration in range(_MAX_TOOL_ITERATIONS):
+            try:
+                llm_response = await self._router.complete(
+                    messages, tools=tool_schemas or None
+                )
+            except LLMUnavailableError:
+                logger.error(
+                    "Orchestrator: all LLM providers unavailable for session=%s", session_id
+                )
+                raise
+
+            # No tool calls — the LLM gave a final answer, exit the loop.
+            if not llm_response.tool_calls:
+                logger.debug(
+                    "Orchestrator: no tool_calls in iteration %d, done.", iteration
+                )
+                break
+
+            # ── Execute tool calls ────────────────────────────────────────────
+            logger.info(
+                "Orchestrator: %d tool_call(s) in iteration %d (session=%s)",
+                len(llm_response.tool_calls),
+                iteration,
+                session_id,
+            )
+
+            # Append the assistant's tool-call message to the thread
+            messages.append({
+                "role": "assistant",
+                "content": llm_response.content or "",
+                "tool_calls": llm_response.tool_calls,  # type: ignore[typeddict-unknown-key]
+            })
+
+            for tc in llm_response.tool_calls:
+                tool_name: str = tc["function"]["name"]
+                tool_args: dict = json.loads(tc["function"]["arguments"] or "{}")
+                tool_call_id: str = tc["id"]
+
+                tool = self._tools.get(tool_name) if self._tools else None
+                if tool is None:
+                    tool_result = f"[Помилка] Інструмент {tool_name!r} не знайдено."
+                    logger.warning("Orchestrator: unknown tool %r", tool_name)
+                else:
+                    try:
+                        tool_result = await tool.run(**tool_args)
+                        logger.debug(
+                            "Orchestrator: tool %r returned %d chars", tool_name, len(tool_result)
+                        )
+                    except Exception as exc:  # noqa: BLE001
+                        tool_result = f"[Помилка виконання інструменту {tool_name!r}]: {exc}"
+                        logger.exception("Orchestrator: tool %r raised an error", tool_name)
+
+                # Append tool result as a 'tool' message
+                messages.append({
+                    "role": "tool",  # type: ignore[typeddict-unknown-key]
+                    "tool_call_id": tool_call_id,  # type: ignore[typeddict-unknown-key]
+                    "content": tool_result,
+                })
+        else:
+            # Exhausted iterations without a plain reply — use whatever we have.
+            logger.warning(
+                "Orchestrator: reached max tool iterations (%d) for session=%s",
+                _MAX_TOOL_ITERATIONS,
+                session_id,
+            )
+
+        assert llm_response is not None  # always set after at least one iteration
         reply = llm_response.content
         logger.info(
             "Orchestrator: reply from provider=%s model=%s (session=%s)",
@@ -177,3 +246,4 @@ class Orchestrator:
             llm_provider=llm_response.provider,
             llm_model=llm_response.model,
         )
+

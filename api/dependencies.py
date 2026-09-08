@@ -86,10 +86,18 @@ def get_orchestrator(
     retriever: RetrieverDep,
 ) -> Orchestrator:
     """Return an Orchestrator wired with the request-scoped dependencies."""
+    from tools.registry import ToolRegistry
+    from tools.search_knowledge_tool import SearchKnowledgeTool
+
+    # Set up tool registry and register standard tools
+    registry = ToolRegistry()
+    registry.register(SearchKnowledgeTool(retriever=retriever))
+
     return Orchestrator(
         session_store=session_store, 
         llm_router=llm_router, 
-        retriever=retriever
+        retriever=retriever,
+        tool_registry=registry,
     )
 
 
