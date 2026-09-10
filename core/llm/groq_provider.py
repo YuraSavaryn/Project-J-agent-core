@@ -44,7 +44,7 @@ class GroqProvider(LLMProvider):
         self._timeout = timeout or settings.llm_request_timeout_seconds
 
         self._client = AsyncOpenAI(
-            api_key=self._api_key,
+            api_key=self._api_key or "dummy_key",
             base_url=self._base_url,
             timeout=self._timeout,
         )

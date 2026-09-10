@@ -215,6 +215,9 @@ class ChromaStore:
         """
         k = top_k or app_settings.rag_top_k
         col = self.collection
+        
+        if col.count() == 0:
+            return []
 
         raw = col.query(
             query_embeddings=[vector],

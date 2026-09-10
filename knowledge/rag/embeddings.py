@@ -41,11 +41,18 @@ class LocalEmbeddingProvider(EmbeddingProvider):
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
         logger.debug("LocalEmbeddingProvider: generating embeddings for %d texts", len(texts))
-        response = await self._client.post("/embed", json={"inputs": texts})
-        response.raise_for_status()
-        # TEI /embed endpoint returns a list of lists of floats directly or dict with it?
-        # Actually, TEI's /embed returns `[ [...] ]` (list of floats).
-        return response.json()
+        
+        # TEI has a max_client_batch_size (default 32). We must batch the request locally.
+        batch_size = 32
+        all_embeddings = []
+        
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            response = await self._client.post("/embed", json={"inputs": batch, "truncate": True})
+            response.raise_for_status()
+            all_embeddings.extend(response.json())
+            
+        return all_embeddings
 
 
 class GeminiEmbeddingProvider(EmbeddingProvider):

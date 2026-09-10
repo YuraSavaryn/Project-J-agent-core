@@ -20,6 +20,8 @@ services:
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
       - EMBEDDING_WORKER_URL=http://embedding-worker:80
+    volumes:
+      - ./data:/app/data
     depends_on:
       redis:
         condition: service_healthy
