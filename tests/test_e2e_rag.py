@@ -87,6 +87,7 @@ def test_client(retriever: Retriever, mock_llm_router: LLMRouter) -> TestClient:
     # 1. get_redis (fakeredis)
     # 2. get_retriever (test retriever)
     # 3. get_llm_router (test llm)
+    # 4. get_query_logger (mock)
     async def _fake_redis():
         redis = FakeRedis(decode_responses=True)
         yield redis
@@ -95,6 +96,9 @@ def test_client(retriever: Retriever, mock_llm_router: LLMRouter) -> TestClient:
     app.dependency_overrides[get_redis] = _fake_redis
     app.dependency_overrides[get_retriever] = lambda: retriever
     app.dependency_overrides[get_llm_router] = lambda: mock_llm_router
+    
+    from api.dependencies import get_query_logger
+    app.dependency_overrides[get_query_logger] = lambda: None
     
     with TestClient(app) as client:
         yield client

@@ -15,12 +15,14 @@ Future steps:
 
 import json
 import logging
+import time
 from dataclasses import dataclass, field
 
 from core.llm.base import ChatMessage, LLMResponse
 from core.llm.router import LLMRouter, LLMUnavailableError
 from core.memory.session_store import MessageDict, SessionStore
 from core.prompts.builder import build_messages
+from core.db.enums import AnswerSource
 from knowledge.curated_wiki.base import Article, KnowledgeProvider
 from knowledge.curated_wiki.stub_provider import StubProvider
 from knowledge.rag.retriever import Retriever
@@ -61,6 +63,8 @@ class Orchestrator:
         Optional registry of callable tools for function-calling.
         When provided, tool schemas are sent to the LLM and any returned
         ``tool_call`` responses are executed in a loop before the final reply.
+    query_logger:
+        Optional logger to record analytics into Postgres.
     history_limit:
         Maximum number of recent messages to include in the prompt.
         Keeps token usage bounded for long conversations.
@@ -73,6 +77,7 @@ class Orchestrator:
         knowledge_provider: KnowledgeProvider | None = None,
         retriever: "Retriever | None" = None,
         tool_registry: "ToolRegistry | None" = None,
+        query_logger: "QueryLogger | None" = None,
         history_limit: int = 20,
     ) -> None:
         self._store = session_store
@@ -80,6 +85,7 @@ class Orchestrator:
         self._wiki = knowledge_provider or StubProvider()
         self._retriever = retriever
         self._tools = tool_registry
+        self._query_logger = query_logger
         self._history_limit = history_limit
 
     async def handle_message(
@@ -88,19 +94,10 @@ class Orchestrator:
         user_message: str,
         context_chunks: list[str] | None = None,
     ) -> OrchestratorResult:
-        """Run the full pipeline for a user message and return the result.
-
-        Parameters
-        ----------
-        session_id:
-            Unique conversation identifier.
-        user_message:
-            The text sent by the user.
-        context_chunks:
-            Optional RAG-retrieved text snippets (injected into the prompt).
-            Empty / None → no extra context at this step.
-        """
+        """Run the full pipeline for a user message and return the result."""
         logger.info("Orchestrator: session=%s, message_len=%d", session_id, len(user_message))
+        start_time = time.perf_counter()
+        answer_source = AnswerSource.fallback
 
         # ── 1. Load history ───────────────────────────────────────────────────
         history: list[MessageDict] = await self._store.get_history(
@@ -120,6 +117,7 @@ class Orchestrator:
                 wiki_article.id,
                 session_id,
             )
+            answer_source = AnswerSource.curated
             extra_chunks.insert(0, wiki_article.content)
             sources_list.append({
                 "document_id": wiki_article.id,
@@ -133,6 +131,9 @@ class Orchestrator:
             # ── 2b. Vector DB RAG lookup (if wiki missed) ─────────────────────
             logger.info("Orchestrator: wiki miss, querying vector store (session=%s)", session_id)
             query_results = await self._retriever.retrieve(query=user_message)
+            
+            if query_results:
+                answer_source = AnswerSource.rag
 
             for qr in query_results:
                 chunk_text = qr.document or qr.metadata.get("content_preview") or ""
@@ -237,7 +238,25 @@ class Orchestrator:
         await self._store.append_message(session_id, role="user", content=user_message)
         await self._store.append_message(session_id, role="assistant", content=reply)
 
-        # ── 6. Return result ──────────────────────────────────────────────────
+        # ── 6. Log query analytics ────────────────────────────────────────────
+        latency_ms = int((time.perf_counter() - start_time) * 1000)
+        query_log_id = None
+        if self._query_logger:
+            try:
+                log_entry = await self._query_logger.log_query(
+                    session_id=session_id,
+                    query_text=user_message,
+                    source=answer_source,
+                    latency_ms=latency_ms,
+                    llm_provider=llm_response.provider,
+                    llm_model=llm_response.model,
+                    retrieved_chunks=sources_list,
+                )
+                query_log_id = log_entry.id
+            except Exception:
+                logger.exception("Orchestrator: failed to log query analytics")
+
+        # ── 7. Return result ──────────────────────────────────────────────────
         return OrchestratorResult(
             reply=reply,
             session_id=session_id,

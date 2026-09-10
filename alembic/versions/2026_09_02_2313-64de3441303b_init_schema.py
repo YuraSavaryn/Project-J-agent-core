@@ -25,11 +25,7 @@ def upgrade() -> None:
         "pdf", "docx", "website", "manual", name="document_source_type"
     )
 
-    channel_type.create(op.get_bind(), checkfirst=True)
-    message_role.create(op.get_bind(), checkfirst=True)
-    answer_source.create(op.get_bind(), checkfirst=True)
-    llm_provider_type.create(op.get_bind(), checkfirst=True)
-    document_source_type.create(op.get_bind(), checkfirst=True)
+    # (Let op.create_table handle Enum creation automatically)
 
     # ── sessions ──────────────────────────────────────────────────────────────
     op.create_table(

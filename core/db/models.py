@@ -17,6 +17,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    DateTime,
     ForeignKey,
     Index,
     Integer,
@@ -58,10 +59,10 @@ class Session(Base):
     channel: Mapped[ChannelType] = mapped_column(channel_type_pg, nullable=False)
     external_user_id: Mapped[str] = mapped_column(Text, nullable=False)
     started_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     last_active_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Relationships
@@ -90,7 +91,7 @@ class Message(Base):
     role: Mapped[MessageRole] = mapped_column(message_role_pg, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Relationship
@@ -107,7 +108,7 @@ class Document(Base):
         Index("idx_documents_active", "is_active"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     source_type: Mapped[DocumentSourceType] = mapped_column(
         document_source_type_pg, nullable=False
     )
@@ -115,9 +116,9 @@ class Document(Base):
     title: Mapped[str] = mapped_column(Text, nullable=False)
     chroma_collection: Mapped[str] = mapped_column(Text, nullable=False)
     ingested_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, server_default="true", nullable=False, default=True)
 
     # Relationships
     chunks: Mapped[list[Chunk]] = relationship(
@@ -135,7 +136,7 @@ class Chunk(Base):
         Index("idx_chunks_document", "document_id"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     document_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False
     )
@@ -162,7 +163,7 @@ class QueryLog(Base):
         Index("idx_query_logs_created", "created_at"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(
         Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )
@@ -174,7 +175,7 @@ class QueryLog(Base):
     llm_model: Mapped[str | None] = mapped_column(Text, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Relationships
@@ -224,14 +225,14 @@ class Feedback(Base):
         UniqueConstraint("query_log_id", name="idx_feedback_one_per_query"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     query_log_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("query_logs.id", ondelete="CASCADE"), nullable=False
     )
     rating: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
     # Relationship

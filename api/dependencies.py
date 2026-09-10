@@ -7,8 +7,10 @@ from typing import Annotated, AsyncGenerator
 
 from fastapi import Depends
 from redis.asyncio import Redis, from_url
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import settings
+from core.db.base import get_db
 from core.llm.router import LLMRouter
 from core.memory.session_store import SessionStore
 from core.orchestrator import Orchestrator
@@ -78,12 +80,22 @@ def get_retriever() -> "Retriever":
 RetrieverDep = Annotated["Retriever", Depends(get_retriever)]
 
 
+# ── QueryLogger ───────────────────────────────────────────────────────────────
+
+def get_query_logger(db: AsyncSession = Depends(get_db)) -> "QueryLogger":
+    from analytics.query_logger import QueryLogger
+    return QueryLogger(db)
+
+QueryLoggerDep = Annotated["QueryLogger", Depends(get_query_logger)]
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 def get_orchestrator(
     session_store: SessionStoreDep,
     llm_router: LLMRouterDep,
     retriever: RetrieverDep,
+    query_logger: QueryLoggerDep,
 ) -> Orchestrator:
     """Return an Orchestrator wired with the request-scoped dependencies."""
     from tools.registry import ToolRegistry
@@ -98,6 +110,7 @@ def get_orchestrator(
         llm_router=llm_router, 
         retriever=retriever,
         tool_registry=registry,
+        query_logger=query_logger,
     )
 
 
