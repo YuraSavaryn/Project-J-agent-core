@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import chat, health, analytics
+from api.routes import chat, health, analytics, sessions
 
 app = FastAPI(
     title="agent-core",
@@ -28,3 +28,5 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(chat.router, prefix="/v1")
 app.include_router(analytics.router)
+app.include_router(sessions.router, prefix="/v1")
+

@@ -37,9 +37,12 @@ RedisDep = Annotated[Redis, Depends(get_redis)]  # type: ignore[type-arg]
 
 # ── SessionStore ──────────────────────────────────────────────────────────────
 
-async def get_session_store(redis: RedisDep) -> SessionStore:
-    """Return a ``SessionStore`` bound to the request-scoped Redis client."""
-    return SessionStore(redis)
+async def get_session_store(
+    redis: RedisDep,
+    db: AsyncSession = Depends(get_db),
+) -> SessionStore:
+    """Return a ``SessionStore`` bound to the request-scoped Redis client and DB."""
+    return SessionStore(redis, db=db)
 
 
 SessionStoreDep = Annotated[SessionStore, Depends(get_session_store)]

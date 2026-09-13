@@ -84,7 +84,7 @@ class Message(Base):
         Index("idx_messages_session_created", "session_id", "created_at"),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(
         Text, ForeignKey("sessions.session_id", ondelete="CASCADE"), nullable=False
     )

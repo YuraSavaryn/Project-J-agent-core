@@ -83,6 +83,8 @@ def test_chat_passes_session_and_message_to_orchestrator(
     mock_orchestrator.handle_message.assert_awaited_once_with(
         session_id="my-session",
         user_message="Що таке Пласт?",
+        channel="web",
+        external_user_id="anonymous",
     )
 
 

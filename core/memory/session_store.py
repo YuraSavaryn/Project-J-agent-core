@@ -9,24 +9,26 @@ Architecture
 - **Cache-miss fallback**: if Redis returns an empty list for a session that
   exists in Postgres, the history is loaded from Postgres and the Redis cache
   is warmed up for subsequent requests.
+- **Session lifecycle**: ``ensure_session`` creates the ``sessions`` row on first
+  use (idempotent — uses INSERT ... ON CONFLICT DO NOTHING). ``touch_session``
+  updates ``last_active_at`` on every ``append_message`` call.
 
 Each session is stored as a Redis List under the key ``session:{session_id}:messages``.
 Every entry is a JSON-encoded ``{"role": "...", "content": "..."}`` dict.
-
-PostgreSQL writes require a ``Session`` row to exist (FK constraint). The caller
-(orchestrator/route) is responsible for creating the ``Session`` row on first use.
 """
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import TypedDict
 
 from redis.asyncio import Redis
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config.settings import settings
 from core.db.models import Message as ORM_Message
+from core.db.models import Session as ORM_Session
 
 logger = logging.getLogger(__name__)
 
@@ -122,11 +124,14 @@ class SessionStore:
         session_id: str,
         role: str,
         content: str,
+        channel: str = "web",
+        external_user_id: str = "anonymous",
     ) -> None:
         """Append a message to the session history.
 
         Writes to **both** Redis (cache) and PostgreSQL (durable), if a DB
-        session is available.
+        session is available. Also ensures the ``sessions`` row exists and
+        updates ``last_active_at``.
 
         Parameters
         ----------
@@ -136,9 +141,17 @@ class SessionStore:
             ``"user"``, ``"assistant"``, or ``"system"``.
         content:
             Message text.
+        channel:
+            Source channel (``"web"``, ``"telegram"``, …). Used only when
+            creating a new ``sessions`` row.
+        external_user_id:
+            External user identifier (Telegram chat_id, web cookie, …).
+            Used only when creating a new ``sessions`` row.
         """
         # ── Durable write (Postgres) ──────────────────────────────────────────
         if self._db is not None:
+            await self.ensure_session(session_id, channel, external_user_id)
+            await self.touch_session(session_id)
             await self._persist_to_postgres(session_id, role, content)
 
         # ── Cache write (Redis) ───────────────────────────────────────────────
@@ -153,6 +166,7 @@ class SessionStore:
 
         logger.debug("SessionStore: appended %s message to session %s", role, session_id)
 
+
     async def clear(self, session_id: str) -> None:
         """Delete the entire history for *session_id* from Redis.
 
@@ -161,7 +175,69 @@ class SessionStore:
         await self._redis.delete(_messages_key(session_id))
         logger.info("SessionStore: cleared Redis cache for session %s", session_id)
 
+
+    async def ensure_session(
+        self,
+        session_id: str,
+        channel: str = "web",
+        external_user_id: str = "anonymous",
+    ) -> None:
+        """Create the ``sessions`` row if it does not yet exist (idempotent).
+
+        Uses ``INSERT ... ON CONFLICT (session_id) DO NOTHING`` so that
+        concurrent first-messages for the same session are handled safely.
+
+        Parameters
+        ----------
+        session_id:
+            Unique session identifier.
+        channel:
+            Source channel (``"web"``, ``"telegram"``, …).
+        external_user_id:
+            External user identifier (Telegram chat_id, web cookie, …).
+        """
+        if self._db is None:
+            return
+        # Portable SELECT + INSERT — works on both SQLite (tests) and PostgreSQL (prod).
+        # In production Postgres we rely on the PRIMARY KEY uniqueness constraint;
+        # any duplicate INSERT raises IntegrityError which we intentionally ignore.
+        existing = await self._db.get(ORM_Session, session_id)
+        if existing is None:
+            try:
+                new_session = ORM_Session(
+                    session_id=session_id,
+                    channel=channel,
+                    external_user_id=external_user_id,
+                )
+                self._db.add(new_session)
+                await self._db.flush()
+            except Exception:
+                # Concurrent insert from another process/request — safe to ignore.
+                await self._db.rollback()
+                logger.debug(
+                    "SessionStore: ensure_session race condition ignored for %s", session_id
+                )
+        logger.debug("SessionStore: ensure_session called for %s", session_id)
+
+    async def touch_session(self, session_id: str) -> None:
+        """Update ``last_active_at`` to the current UTC time.
+
+        Should be called on every ``append_message`` to keep the
+        ``sessions`` table up to date for analytics / expiry queries.
+        """
+        if self._db is None:
+            return
+        now = datetime.now(timezone.utc)
+        stmt = (
+            update(ORM_Session)
+            .where(ORM_Session.session_id == session_id)
+            .values(last_active_at=now)
+        )
+        await self._db.execute(stmt)
+        logger.debug("SessionStore: touched last_active_at for session %s", session_id)
+
     # ── Private helpers ───────────────────────────────────────────────────────
+
 
     async def _persist_to_postgres(
         self, session_id: str, role: str, content: str

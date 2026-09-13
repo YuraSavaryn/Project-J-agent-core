@@ -29,6 +29,8 @@ services:
         condition: service_healthy
       chromadb:
         condition: service_healthy
+      embedding-worker:
+        condition: service_healthy
     networks:
       - shared-net
     healthcheck:

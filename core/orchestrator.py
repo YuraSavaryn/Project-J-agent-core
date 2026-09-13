@@ -93,8 +93,26 @@ class Orchestrator:
         session_id: str,
         user_message: str,
         context_chunks: list[str] | None = None,
+        channel: str = "web",
+        external_user_id: str = "anonymous",
     ) -> OrchestratorResult:
-        """Run the full pipeline for a user message and return the result."""
+        """Run the full pipeline for a user message and return the result.
+
+        Parameters
+        ----------
+        session_id:
+            Unique session identifier.
+        user_message:
+            The user's message text.
+        context_chunks:
+            Optional pre-built RAG context chunks to inject into the prompt.
+        channel:
+            Source channel (``"web"``, ``"telegram"``, …). Used to create the
+            ``sessions`` row on first use.
+        external_user_id:
+            External user identifier (Telegram chat_id, web cookie, …). Used
+            to create the ``sessions`` row on first use.
+        """
         logger.info("Orchestrator: session=%s, message_len=%d", session_id, len(user_message))
         start_time = time.perf_counter()
         answer_source = AnswerSource.fallback
@@ -235,8 +253,14 @@ class Orchestrator:
         )
 
         # ── 5. Persist to session store ───────────────────────────────────────
-        await self._store.append_message(session_id, role="user", content=user_message)
-        await self._store.append_message(session_id, role="assistant", content=reply)
+        await self._store.append_message(
+            session_id, role="user", content=user_message,
+            channel=channel, external_user_id=external_user_id,
+        )
+        await self._store.append_message(
+            session_id, role="assistant", content=reply,
+            channel=channel, external_user_id=external_user_id,
+        )
 
         # ── 6. Log query analytics ────────────────────────────────────────────
         latency_ms = int((time.perf_counter() - start_time) * 1000)
