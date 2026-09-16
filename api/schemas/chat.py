@@ -74,6 +74,10 @@ class ChatResponse(BaseModel):
         default_factory=list,
         description="Optional quick-reply suggestions for the client.",
     )
+    query_log_id: int | None = Field(
+        default=None,
+        description="ID of the logged query, used for submitting feedback.",
+    )
 
     model_config = {
         "json_schema_extra": {

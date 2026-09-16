@@ -121,4 +121,7 @@ def test_chat_returns_503_when_llm_unavailable(
     response = client.post("/v1/chat", json=payload)
 
     assert response.status_code == 503
-    assert "недоступний" in response.json()["detail"].lower()
+    body = response.json()
+    # New unified error envelope: {"error": {"code": "...", "message": "..."}}
+    assert "error" in body
+    assert "недоступний" in body["error"]["message"].lower()

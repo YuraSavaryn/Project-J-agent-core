@@ -125,7 +125,7 @@ async def test_get_session_not_found(async_client):
     """GET /v1/sessions/{id} returns 404 for non-existent session."""
     resp = await async_client.get("/v1/sessions/nonexistent-session")
     assert resp.status_code == 404
-    assert "not found" in resp.json()["detail"].lower()
+    assert "not found" in resp.json()["error"]["message"].lower()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -176,7 +176,7 @@ async def test_delete_session_not_found(async_client):
     """DELETE /v1/sessions/{id} returns 404 for non-existent session."""
     resp = await async_client.delete("/v1/sessions/does-not-exist")
     assert resp.status_code == 404
-    assert "not found" in resp.json()["detail"].lower()
+    assert "not found" in resp.json()["error"]["message"].lower()
 
 
 @pytest.mark.asyncio

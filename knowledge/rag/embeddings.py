@@ -32,12 +32,11 @@ class EmbeddingProvider(ABC):
 class LocalEmbeddingProvider(EmbeddingProvider):
     """Generates embeddings using a local text-embeddings-inference worker."""
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, timeout: float | None = None):
+        from config.settings import settings as _settings
         self.base_url = base_url.rstrip("/")
-        # We don't manage a single client lifecycle here for simplicity,
-        # but in production, we should probably inject an httpx.AsyncClient
-        # or manage its open/close state.
-        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=30.0)
+        self._timeout = timeout if timeout is not None else _settings.embedding_request_timeout_seconds
+        self._client = httpx.AsyncClient(base_url=self.base_url, timeout=self._timeout)
 
     async def embed(self, texts: List[str]) -> List[List[float]]:
         logger.debug("LocalEmbeddingProvider: generating embeddings for %d texts", len(texts))

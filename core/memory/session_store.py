@@ -262,7 +262,7 @@ class SessionStore:
             .order_by(ORM_Message.created_at)
         )
         rows = result.scalars().all()
-        return [{"role": str(row.role), "content": row.content} for row in rows]
+        return [{"role": getattr(row.role, "value", row.role), "content": row.content} for row in rows]
 
     async def _warm_cache(self, session_id: str, messages: list[MessageDict]) -> None:
         """Populate Redis from the Postgres result (cache warm-up)."""

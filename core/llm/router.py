@@ -4,15 +4,18 @@ Flow
 ----
 1. Build the provider chain from ``settings.llm_primary_provider``.
    Primary goes first; the other provider is the fallback.
-2. ``complete()`` tries the primary provider.
+2. ``complete()`` tries the primary provider with up to
+   ``settings.llm_retry_attempts`` retries (exponential backoff).
 3. On ``APIConnectionError``, ``APITimeoutError``, or ``APIStatusError``
-   with a 5xx status → log a warning and try the fallback.
+   with a 5xx status → retry within provider, then log a warning and try
+   the fallback.
 4. If all providers fail → raise ``LLMUnavailableError``.
 
 This is intentionally simple (two fixed providers).  A more sophisticated
 router (round-robin, cost-based, model-selection) can replace this later.
 """
 
+import asyncio
 import logging
 from typing import Any
 
@@ -31,7 +34,7 @@ class LLMUnavailableError(Exception):
 
 
 class LLMRouter:
-    """Selects and calls LLM providers with automatic fallback.
+    """Selects and calls LLM providers with automatic fallback and retry.
 
     Parameters
     ----------
@@ -39,13 +42,35 @@ class LLMRouter:
         Ordered list of providers to try.  The first provider is primary;
         the rest are fallbacks tried in order.  If ``None``, the list is
         built from ``settings.llm_primary_provider``.
+    retry_attempts:
+        Number of retry attempts *per provider* on transient errors
+        (connection errors, timeouts, 5xx).  Defaults to
+        ``settings.llm_retry_attempts``.
+    retry_backoff_seconds:
+        Base delay in seconds between retries; doubles each attempt
+        (exponential backoff).  Defaults to ``settings.llm_retry_backoff_seconds``.
     """
 
-    def __init__(self, providers: list[LLMProvider] | None = None) -> None:
+    def __init__(
+        self,
+        providers: list[LLMProvider] | None = None,
+        retry_attempts: int | None = None,
+        retry_backoff_seconds: float | None = None,
+    ) -> None:
         if providers is not None:
             self._providers = providers
         else:
             self._providers = _build_provider_chain()
+        self._retry_attempts = (
+            retry_attempts
+            if retry_attempts is not None
+            else settings.llm_retry_attempts
+        )
+        self._retry_backoff = (
+            retry_backoff_seconds
+            if retry_backoff_seconds is not None
+            else settings.llm_retry_backoff_seconds
+        )
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -58,12 +83,12 @@ class LLMRouter:
         temperature: float = 0.7,
         max_tokens: int | None = None,
     ) -> LLMResponse:
-        """Try providers in order; return the first successful response.
+        """Try providers in order with per-provider retry; return first success.
 
         Raises
         ------
         LLMUnavailableError
-            If every provider in the chain fails.
+            If every provider in the chain fails all retry attempts.
         """
         last_exc: Exception | None = None
 
@@ -75,41 +100,14 @@ class LLMRouter:
                 )
                 continue
 
-            try:
-                logger.debug("LLMRouter: trying provider %r", provider.name)
-                response = await provider.complete(
-                    messages,
-                    tools,
-                    model=model,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                logger.info(
-                    "LLMRouter: success via %r (model=%s)", provider.name, response.model
-                )
-                return response
-
-            except (APIConnectionError, APITimeoutError) as exc:
-                logger.warning(
-                    "LLMRouter: provider %r connection/timeout error — trying next. %s",
-                    provider.name,
-                    exc,
-                )
-                last_exc = exc
-
-            except APIStatusError as exc:
-                if exc.status_code >= 500:
-                    logger.warning(
-                        "LLMRouter: provider %r returned %d — trying next. %s",
-                        provider.name,
-                        exc.status_code,
-                        exc,
-                    )
-                    last_exc = exc
-                else:
-                    # 4xx errors (bad key, quota, bad request) — re-raise immediately,
-                    # no point in trying the next provider with the same bad input.
-                    raise
+            result = await self._try_provider_with_retry(
+                provider, messages, tools, model=model,
+                temperature=temperature, max_tokens=max_tokens,
+            )
+            if isinstance(result, Exception):
+                last_exc = result
+                continue
+            return result
 
         raise LLMUnavailableError(
             "All LLM providers failed or are unavailable."
@@ -119,6 +117,91 @@ class LLMRouter:
     def providers(self) -> list[LLMProvider]:
         """Expose the provider chain (useful for introspection in tests)."""
         return list(self._providers)
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    async def _try_provider_with_retry(
+        self,
+        provider: LLMProvider,
+        messages: list[ChatMessage],
+        tools: list[ToolDefinition] | None,
+        *,
+        model: str | None,
+        temperature: float,
+        max_tokens: int | None,
+    ) -> LLMResponse | Exception:
+        """Attempt the provider up to ``_retry_attempts`` times with backoff.
+
+        Returns the ``LLMResponse`` on success, or the last ``Exception`` if
+        all attempts failed (so the caller can try the next provider).
+        """
+        last_exc: Exception | None = None
+        backoff = self._retry_backoff
+
+        for attempt in range(1, self._retry_attempts + 1):
+            try:
+                logger.debug(
+                    "LLMRouter: trying provider %r (attempt %d/%d)",
+                    provider.name,
+                    attempt,
+                    self._retry_attempts,
+                )
+                response = await provider.complete(
+                    messages,
+                    tools,
+                    model=model,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                logger.info(
+                    "LLMRouter: success via %r (model=%s, attempt=%d)",
+                    provider.name,
+                    response.model,
+                    attempt,
+                )
+                return response
+
+            except (APIConnectionError, APITimeoutError) as exc:
+                last_exc = exc
+                logger.warning(
+                    "LLMRouter: provider %r connection/timeout error (attempt %d/%d): %s",
+                    provider.name,
+                    attempt,
+                    self._retry_attempts,
+                    exc,
+                )
+
+            except APIStatusError as exc:
+                if exc.status_code >= 500:
+                    last_exc = exc
+                    logger.warning(
+                        "LLMRouter: provider %r returned %d (attempt %d/%d): %s",
+                        provider.name,
+                        exc.status_code,
+                        attempt,
+                        self._retry_attempts,
+                        exc,
+                    )
+                else:
+                    # 4xx → don't retry, don't fall back — bad request/key
+                    raise
+
+            if attempt < self._retry_attempts:
+                logger.debug(
+                    "LLMRouter: waiting %.2fs before retry (provider=%r)",
+                    backoff,
+                    provider.name,
+                )
+                await asyncio.sleep(backoff)
+                backoff *= 2  # exponential backoff
+
+        logger.warning(
+            "LLMRouter: provider %r exhausted %d attempt(s) — trying next provider.",
+            provider.name,
+            self._retry_attempts,
+        )
+        assert last_exc is not None
+        return last_exc
 
 
 # ── Factory helpers ───────────────────────────────────────────────────────────
@@ -144,4 +227,3 @@ def _build_provider_chain() -> list[LLMProvider]:
 def get_llm_router() -> LLMRouter:
     """FastAPI dependency / convenience factory for ``LLMRouter``."""
     return LLMRouter()
-

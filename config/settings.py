@@ -1,4 +1,12 @@
-"""Application settings loaded from environment variables via pydantic-settings."""
+"""Application settings loaded from environment variables via pydantic-settings.
+
+Priority (highest → lowest):
+  1. Real environment variables (e.g. set in docker-compose `environment:`)
+  2. Values from the `.env` file (loaded automatically by pydantic-settings)
+
+All fields are required and must be provided either in the `.env` file 
+or as environment variables.
+"""
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -6,7 +14,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Central configuration for agent-core.
 
-    All settings can be overridden via environment variables or a `.env` file.
+    All settings are required and are populated via environment variables or a `.env` file.
     """
 
     model_config = SettingsConfigDict(
@@ -17,51 +25,51 @@ class Settings(BaseSettings):
     )
 
     # ── Application ───────────────────────────────────────────────────────────
-    app_env: str = "development"
-    app_host: str = "0.0.0.0"
-    app_port: int = 8000
-    log_level: str = "INFO"
+    app_env: str
+    app_host: str
+    app_port: int
+    log_level: str
 
     # ── LLM Providers ────────────────────────────────────────────────────────
-    groq_api_key: str = ""
-    groq_base_url: str = "https://api.groq.com/openai/v1"
-    groq_default_model: str = "llama-3.1-70b-versatile"
+    groq_api_key: str
+    groq_base_url: str
+    groq_default_model: str
 
-    openrouter_api_key: str = ""
-    openrouter_base_url: str = "https://openrouter.ai/api/v1"
-    openrouter_default_model: str = "anthropic/claude-3.5-sonnet"
+    openrouter_api_key: str
+    openrouter_base_url: str
+    openrouter_default_model: str
 
-    llm_primary_provider: str = "groq"  # groq | openrouter
-    llm_request_timeout_seconds: float = 30.0
+    llm_primary_provider: str
+    llm_request_timeout_seconds: float
+    llm_retry_attempts: int
+    llm_retry_backoff_seconds: float
 
     # ── Redis ─────────────────────────────────────────────────────────────────
-    redis_url: str = "redis://localhost:6379/0"
-    redis_session_ttl_seconds: int = 86400  # 24 hours
+    redis_url: str
+    redis_session_ttl_seconds: int
 
-    # ── PostgreSQL ───────────────────────────────────────────────────────────
-    postgres_dsn: str = "postgresql+asyncpg://agent:secret@localhost:5432/agentcore"
+    # ── PostgreSQL ────────────────────────────────────────────────────────────
+    postgres_dsn: str
 
     # ── ChromaDB ─────────────────────────────────────────────────────────────
-    chroma_host: str = "localhost"
-    chroma_port: int = 8001
-    # One shared collection for all knowledge (per step 9 convention)
-    chroma_collection: str = "ngo_knowledge_base"
-    # bge-m3 / e5 embedding dimension; cosine distance for similarity
-    chroma_vector_dim: int = 384
-    chroma_distance_fn: str = "cosine"
+    chroma_host: str
+    chroma_port: int
+    chroma_collection: str
+    chroma_vector_dim: int
+    chroma_distance_fn: str
 
-    # ── Embeddings ───────────────────────────────────────────────────────────
-    embedding_provider: str = "local"  # local | gemini
-    embedding_worker_url: str = "http://localhost:8002"
-    gemini_api_key: str = ""
-    gemini_embedding_model: str = "text-embedding-004"
+    # ── Embeddings ────────────────────────────────────────────────────────────
+    embedding_provider: str
+    embedding_worker_url: str
+    embedding_request_timeout_seconds: float
+    gemini_api_key: str
+    gemini_embedding_model: str
 
     # ── RAG ──────────────────────────────────────────────────────────────────
-    rag_top_k: int = 5
-    rag_chunk_size: int = 512
-    rag_chunk_overlap: int = 64
+    rag_top_k: int
+    rag_chunk_size: int
+    rag_chunk_overlap: int
 
 
 # Singleton settings instance — import this everywhere
 settings = Settings()
-

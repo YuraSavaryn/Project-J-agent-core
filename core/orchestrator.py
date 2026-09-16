@@ -43,6 +43,7 @@ class OrchestratorResult:
     suggested_actions: list[dict] = field(default_factory=list)
     llm_provider: str | None = None
     llm_model: str | None = None
+    query_log_id: int | None = None
 
 
 class Orchestrator:
@@ -288,5 +289,6 @@ class Orchestrator:
             suggested_actions=[],
             llm_provider=llm_response.provider,
             llm_model=llm_response.model,
+            query_log_id=query_log_id,
         )
 
