@@ -76,7 +76,7 @@ services:
       retries: 5
 
   embedding-worker:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.9
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
     container_name: agent-embedding-worker
     restart: unless-stopped
     command: --model-id intfloat/multilingual-e5-small
@@ -88,9 +88,10 @@ services:
       - shared-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
 
   chromadb:
     image: chromadb/chroma:1.0.0
