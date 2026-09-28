@@ -4,7 +4,7 @@ import logging
 
 from fastapi import APIRouter, Header
 
-from api.dependencies import OrchestratorDep
+from api.dependencies import ApiKeyDep, OrchestratorDep
 from api.schemas.chat import ChatRequest, ChatResponse, SourceChunk, SuggestedAction
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ router = APIRouter(tags=["chat"])
 async def chat(
     request: ChatRequest,
     orchestrator: OrchestratorDep,
+    _auth: ApiKeyDep,
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> ChatResponse:
     """Handle a user message through the full LLM orchestrator pipeline.
@@ -36,9 +37,23 @@ async def chat(
     Pipeline: session history → prompt builder → LLM router → session persist → response.
 
     Raises ``LLMUnavailableError`` when all providers fail; the global exception
-    handler in ``api/main.py`` converts it to a 503 ``ErrorResponse``.
+    handler in ``api/main.py`` converts it to a 503 ``ErrorResponse``.\
+
+    ``external_user_id`` resolution order:
+    1. ``request.external_user_id`` body field.
+    2. ``X-User-Id`` request header.
+    3. Derived from ``session_id`` by stripping a known prefix
+       (e.g. ``tg-12345`` → ``12345``).
+    4. Fallback: ``"anonymous"``.
     """
-    external_user_id = x_user_id or "anonymous"
+    # Resolve external_user_id: body > header > derived from session_id > anonymous
+    derived = request.session_id.split("-")[-1] if "-" in request.session_id else None
+    external_user_id = (
+        request.external_user_id
+        or x_user_id
+        or derived
+        or "anonymous"
+    )
 
     result = await orchestrator.handle_message(
         session_id=request.session_id,

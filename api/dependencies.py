@@ -3,9 +3,10 @@
 Import the dependency functions here and use them in route handlers via ``Depends()``.
 """
 
+import secrets
 from typing import Annotated, AsyncGenerator
 
-from fastapi import Depends
+from fastapi import Depends, Header, HTTPException, status
 from redis.asyncio import Redis, from_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +16,35 @@ from core.llm.router import LLMRouter
 from core.memory.session_store import SessionStore
 from core.orchestrator import Orchestrator
 from knowledge.rag.retriever import Retriever
+
+# ── API Key auth ──────────────────────────────────────────────────────────────
+
+async def require_api_key(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+) -> None:
+    """Validate the X-API-Key header when API_KEY is configured.
+
+    If ``settings.api_key`` is empty, authentication is disabled and every
+    request passes through. When enabled:
+    - Missing key  → 401 Unauthorized
+    - Wrong key    → 403 Forbidden  (prevents timing-based enumeration via
+                                     ``secrets.compare_digest``)
+    """
+    if not settings.api_key:
+        return  # auth disabled
+    if x_api_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "missing_api_key", "message": "X-API-Key header is required."},
+        )
+    if not secrets.compare_digest(x_api_key, settings.api_key):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "invalid_api_key", "message": "Invalid API key."},
+        )
+
+
+ApiKeyDep = Annotated[None, Depends(require_api_key)]
 
 # ── Redis ─────────────────────────────────────────────────────────────────────
 _redis_client: Redis | None = None  # type: ignore[type-arg]

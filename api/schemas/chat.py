@@ -31,6 +31,18 @@ class ChatRequest(BaseModel):
             examples=["telegram", "web"],
         ),
     ] = "web"
+    external_user_id: Annotated[
+        str | None,
+        Field(
+            default=None,
+            description=(
+                "External user identifier (Telegram chat_id, web cookie, …). "
+                "If omitted, the server tries to derive it from session_id "
+                "or falls back to 'anonymous'."
+            ),
+            examples=["123456789", "web-user-abc"],
+        ),
+    ] = None
 
     model_config = {
         "json_schema_extra": {
@@ -39,6 +51,7 @@ class ChatRequest(BaseModel):
                     "session_id": "tg-user-12345",
                     "message": "Розкажи про права дитини в Україні",
                     "channel": "telegram",
+                    "external_user_id": "12345",
                 }
             ]
         }
