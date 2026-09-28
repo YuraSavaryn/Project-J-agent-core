@@ -1,7 +1,5 @@
 # docker-compose.yml — agent-core
-# Steps 3-4: added redis, postgres
-# Step 8:    added embedding-worker
-# Step 9:    added chromadb
+# Step 16: finalized compose — external shared-net, removed unnecessary port bindings
 
 services:
   agent-api:
@@ -59,8 +57,8 @@ services:
     image: postgres:16-alpine
     container_name: agent-postgres
     restart: unless-stopped
-    ports:
-      - "5432:5432"
+    # Port 5432 intentionally NOT exposed: only agent-api accesses it via Docker DNS.
+    # To inspect the DB locally, use: docker compose exec postgres psql -U agent -d agentcore
     environment:
       POSTGRES_USER: agent
       POSTGRES_PASSWORD: secret
@@ -80,8 +78,7 @@ services:
     container_name: agent-embedding-worker
     restart: unless-stopped
     command: --model-id intfloat/multilingual-e5-small
-    ports:
-      - "8002:80"
+    # Port 80 intentionally NOT exposed: only agent-api calls it via Docker DNS.
     volumes:
       - embedding_cache:/data
     networks:
@@ -97,12 +94,11 @@ services:
     image: chromadb/chroma:1.0.0
     container_name: agent-chromadb
     restart: unless-stopped
+    # Port 8000 intentionally NOT exposed: only agent-api calls it via Docker DNS.
     environment:
       IS_PERSISTENT: "TRUE"
       PERSIST_DIRECTORY: /chroma/chroma
       ANONYMIZED_TELEMETRY: "FALSE"
-    ports:
-      - "8001:8000"
     volumes:
       - chroma_data:/chroma/chroma
     networks:
@@ -123,4 +119,7 @@ volumes:
 networks:
   shared-net:
     name: agent-shared-net
-    driver: bridge
+    # external: true means this network is created outside this compose file.
+    # Create it once with: docker network create agent-shared-net
+    # This allows telegram-bot and other client services to join the same network.
+    external: true
