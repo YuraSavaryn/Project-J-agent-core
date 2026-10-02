@@ -1,6 +1,3 @@
-# docker-compose.yml — agent-core
-# Step 16: finalized compose — external shared-net, removed unnecessary port bindings
-
 services:
   agent-api:
     build:
@@ -118,8 +115,4 @@ volumes:
 
 networks:
   shared-net:
-    name: agent-shared-net
-    # external: true means this network is created outside this compose file.
-    # Create it once with: docker network create agent-shared-net
-    # This allows telegram-bot and other client services to join the same network.
     external: true

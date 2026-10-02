@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     app_host: str
     app_port: int
     log_level: str
+    api_key: str | None = None
 
     # ── LLM Providers ────────────────────────────────────────────────────────
     groq_api_key: str
