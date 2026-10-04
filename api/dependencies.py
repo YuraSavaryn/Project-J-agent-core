@@ -46,6 +46,9 @@ async def require_api_key(
 
 ApiKeyDep = Annotated[None, Depends(require_api_key)]
 
+# ── Database session ──────────────────────────────────────────────────────────
+DbDep = Annotated[AsyncSession, Depends(get_db)]
+
 # ── Redis ─────────────────────────────────────────────────────────────────────
 _redis_client: Redis | None = None  # type: ignore[type-arg]
 
@@ -148,3 +151,38 @@ def get_orchestrator(
 
 
 OrchestratorDep = Annotated[Orchestrator, Depends(get_orchestrator)]
+
+
+# ── IngestionPipeline ─────────────────────────────────────────────────────────
+
+def get_ingestion_pipeline() -> "IngestionPipeline":
+    """Return an ``IngestionPipeline`` wired from settings.
+
+    Mirrors the logic in ``knowledge.rag.ingestion.run._build_pipeline``.
+    The pipeline is stateless (no per-request state) so it is safe to build
+    once per request.
+    """
+    from knowledge.rag.embeddings import get_embedding_provider
+    from knowledge.rag.ingestion.pipeline import IngestionPipeline
+    from knowledge.rag.vectorstore.chroma_store import ChromaStore
+
+    embedding_provider = get_embedding_provider(
+        provider=settings.embedding_provider,
+        worker_url=settings.embedding_worker_url,
+        gemini_key=settings.gemini_api_key,
+        gemini_model=settings.gemini_embedding_model,
+    )
+    vector_store = ChromaStore(
+        host=settings.chroma_host,
+        port=settings.chroma_port,
+        collection_name=settings.chroma_collection,
+        distance_fn=settings.chroma_distance_fn,
+    )
+    vector_store.ensure_collection()
+    return IngestionPipeline(
+        embedding_provider=embedding_provider,
+        vector_store=vector_store,
+    )
+
+
+IngestionPipelineDep = Annotated["IngestionPipeline", Depends(get_ingestion_pipeline)]

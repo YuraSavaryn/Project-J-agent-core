@@ -12,7 +12,7 @@ from api.exception_handlers import (
     validation_exception_handler,
 )
 from api.middleware import RequestIdMiddleware
-from api.routes import chat, health, analytics, sessions
+from api.routes import chat, health, analytics, sessions, documents
 from core.llm.router import LLMUnavailableError
 from core.logging_config import configure_logging
 
@@ -52,3 +52,4 @@ app.include_router(health.router)
 app.include_router(chat.router, prefix="/v1")
 app.include_router(analytics.router)
 app.include_router(sessions.router, prefix="/v1")
+app.include_router(documents.router, prefix="/v1")

@@ -74,29 +74,36 @@ class PdfLoader(DocumentLoader):
     """
 
     def load(self, source: str) -> LoadedDocument:
+        path = Path(source)
+        logger.info("PdfLoader: loading %s", path)
+        with open(path, "rb") as fh:
+            return self._parse(fh.read(), filename=path.stem)
+
+    def load_from_bytes(self, data: bytes, filename: str) -> LoadedDocument:
+        """Load a PDF from in-memory bytes (for API file uploads)."""
+        logger.info("PdfLoader: loading from bytes, filename=%r", filename)
+        return self._parse(data, filename=filename)
+
+    def _parse(self, data: bytes, filename: str) -> LoadedDocument:
         try:
             import pypdf  # deferred — not needed for web/docx paths
         except ImportError as exc:
             raise ImportError("pypdf is required for PDF loading. Run: uv add pypdf") from exc
 
-        path = Path(source)
-        logger.info("PdfLoader: loading %s", path)
-
-        reader = pypdf.PdfReader(str(path))
-        pages = []
-        for page in reader.pages:
-            page_text = page.extract_text() or ""
-            pages.append(page_text)
-
+        reader = pypdf.PdfReader(io.BytesIO(data))
+        pages = [page.extract_text() or "" for page in reader.pages]
         text = "\n".join(pages).strip()
-        title = reader.metadata.title if reader.metadata and reader.metadata.title else path.stem
-
+        title = (
+            reader.metadata.title
+            if reader.metadata and reader.metadata.title
+            else filename
+        )
         logger.info("PdfLoader: extracted %d chars from %d pages", len(text), len(reader.pages))
         return LoadedDocument(
             text=text,
             title=title,
             source_type=DocumentSourceType.pdf,
-            source_url=path.resolve().as_uri(),
+            source_url=None,
         )
 
 
@@ -106,6 +113,17 @@ class DocxLoader(DocumentLoader):
     """Load text from a Word (.docx) file using ``python-docx``."""
 
     def load(self, source: str) -> LoadedDocument:
+        path = Path(source)
+        logger.info("DocxLoader: loading %s", path)
+        with open(path, "rb") as fh:
+            return self._parse(fh.read(), filename=path.stem)
+
+    def load_from_bytes(self, data: bytes, filename: str) -> LoadedDocument:
+        """Load a DOCX from in-memory bytes (for API file uploads)."""
+        logger.info("DocxLoader: loading from bytes, filename=%r", filename)
+        return self._parse(data, filename=filename)
+
+    def _parse(self, data: bytes, filename: str) -> LoadedDocument:
         try:
             import docx  # python-docx
         except ImportError as exc:
@@ -113,26 +131,20 @@ class DocxLoader(DocumentLoader):
                 "python-docx is required for DOCX loading. Run: uv add python-docx"
             ) from exc
 
-        path = Path(source)
-        logger.info("DocxLoader: loading %s", path)
-
-        doc = docx.Document(str(path))
+        doc = docx.Document(io.BytesIO(data))
         paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
         text = "\n".join(paragraphs).strip()
-
-        # Try document core properties for a title
         title = (
             doc.core_properties.title
             if doc.core_properties and doc.core_properties.title
-            else path.stem
+            else filename
         )
-
         logger.info("DocxLoader: extracted %d chars from %d paragraphs", len(text), len(paragraphs))
         return LoadedDocument(
             text=text,
             title=title,
             source_type=DocumentSourceType.docx,
-            source_url=path.resolve().as_uri(),
+            source_url=None,
         )
 
 

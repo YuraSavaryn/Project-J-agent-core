@@ -42,6 +42,7 @@ class DocumentSourceType(str, enum.Enum):
     """How a document entered the RAG knowledge base."""
     pdf = "pdf"
     docx = "docx"
+    txt = "txt"
     website = "website"
     manual = "manual"
 
